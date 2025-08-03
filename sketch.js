@@ -1,64 +1,52 @@
 let video;
 let poseNet;
 let poses = [];
-let trails = {}; // 각 사람의 손 위치 추적용 (ID 기반)
+let prevPoses = {};
+let colors = {};
 
 function setup() {
-  createCanvas(800, 600);
+  createCanvas(windowWidth, windowHeight);
   video = createCapture(VIDEO);
   video.size(width, height);
   video.hide();
 
-  poseNet = ml5.poseNet(video, { detectionType: 'multi' }, modelReady);
-  poseNet.on('pose', function (results) {
+  poseNet = ml5.poseNet(video, () => {
+    console.log('PoseNet Ready');
+  });
+  poseNet.on('pose', function(results) {
     poses = results;
   });
 
   background(255);
 }
 
-function modelReady() {
-  console.log("PoseNet 로드 완료");
-}
-
 function draw() {
-  fill(255, 10);
-  rect(0, 0, width, height); // 잔상 효과
-
   for (let i = 0; i < poses.length; i++) {
-    const pose = poses[i].pose;
-    const id = poses[i].skeleton?.[0]?.[0]?.part + i || i;
+    let pose = poses[i].pose;
 
-    const hands = ["leftWrist", "rightWrist"];
+    for (let j = 0; j < pose.keypoints.length; j++) {
+      let keypoint = pose.keypoints[j];
 
-    hands.forEach((hand) => {
-      const kp = pose.keypoints.find(k => k.part === hand);
-      if (kp && kp.score > 0.4) {
-        const x = kp.position.x;
-        const y = kp.position.y;
+      if (keypoint.score > 0.5) {
+        let id = `${i}_${keypoint.part}`;
+        let x = keypoint.position.x;
+        let y = keypoint.position.y;
 
-        if (!trails[id]) {
-          trails[id] = {};
-        }
-        if (!trails[id][hand]) {
-          trails[id][hand] = { px: x, py: y };
-          return;
+        if (!colors[id]) {
+          colors[id] = color(random(255), random(255), random(255));
         }
 
-        const prev = trails[id][hand];
-        const dx = x - prev.px;
-        const dy = y - prev.py;
-        const speed = dist(x, y, prev.px, prev.py);
+        if (prevPoses[id]) {
+          let prev = prevPoses[id];
+          let movementSpeed = dist(x, y, prev.x, prev.y);
+          let weight = map(movementSpeed, 0, 50, 1, 20);
+          stroke(colors[id]);
+          strokeWeight(weight);
+          line(prev.x, prev.y, x, y);
+        }
 
-        const angle = atan2(dy, dx);
-        const hue = degrees(angle) % 360;
-
-        strokeWeight(map(speed, 0, 50, 1, 20, true));
-        stroke(color(`hsla(${hue}, 80%, 60%, 0.8)`));
-        line(prev.px, prev.py, x, y);
-
-        trails[id][hand] = { px: x, py: y };
+        prevPoses[id] = {x, y};
       }
-    });
+    }
   }
 }
